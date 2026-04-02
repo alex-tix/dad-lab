@@ -29,6 +29,9 @@
 You already have Rust, `cargo`, and `injectived` from previous labs. Today we need one new target so the Rust compiler can output WebAssembly binaries, plus a small validation tool.
 
 ```bash
+# Use a rust version compatible with cosmwasm
+rustup override set 1.88
+
 # Add the Wasm compilation target
 rustup target add wasm32-unknown-unknown
 
