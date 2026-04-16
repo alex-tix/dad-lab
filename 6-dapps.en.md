@@ -712,7 +712,7 @@ Injective provides a suite of TypeScript packages for building dApps. We'll use 
 | Package | What it does |
 |---------|-------------|
 | `@injectivelabs/sdk-ts` | Core SDK — message types (`MsgExecuteContractCompat`), gRPC client (`ChainGrpcWasmApi`), address utilities |
-| `@injectivelabs/wallet-ts` | **WalletStrategy** — a unified interface for connecting to different wallets (Keplr, MetaMask, Leap, etc.) |
+| `@injectivelabs/wallet-strategy` | **WalletStrategy** — a unified interface for connecting to different wallets (Keplr, MetaMask, Leap, etc.) |
 | `@injectivelabs/wallet-core` | **MsgBroadcaster** — handles signing and broadcasting transactions through the connected wallet |
 | `@injectivelabs/networks` | Network helpers — resolves gRPC/REST/RPC endpoints for testnet or mainnet |
 
@@ -771,7 +771,7 @@ npm install
 ### 10.2 Install Injective SDK Packages
 
 ```bash
-npm install @injectivelabs/sdk-ts @injectivelabs/wallet-ts @injectivelabs/wallet-core @injectivelabs/networks @injectivelabs/ts-types
+npm install @injectivelabs/sdk-ts @injectivelabs/wallet-strategy @injectivelabs/wallet-core @injectivelabs/wallet-base @injectivelabs/networks
 ```
 
 The Injective SDK uses some Node.js APIs internally (like `Buffer`). In a browser, we need polyfills. Install the Vite plugin:
@@ -869,8 +869,8 @@ Update `src/App.tsx`:
 
 ```tsx
 import { useState } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-ts";
-import { Wallet } from "@injectivelabs/ts-types";
+import { WalletStrategy } from "@injectivelabs/wallet-strategy";
+import { Wallet } from "@injectivelabs/wallet-base";
 import { CHAIN_ID } from "./config";
 
 const walletStrategy = new WalletStrategy({
@@ -939,8 +939,8 @@ Update `src/App.tsx`:
 
 ```tsx
 import { useState, useEffect } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-ts";
-import { Wallet } from "@injectivelabs/ts-types";
+import { WalletStrategy } from "@injectivelabs/wallet-strategy";
+import { Wallet } from "@injectivelabs/wallet-base";
 import { ChainGrpcWasmApi } from "@injectivelabs/sdk-ts";
 import { CHAIN_ID, ENDPOINTS, CONTRACT_ADDRESS } from "./config";
 
@@ -1036,8 +1036,8 @@ Replace `src/App.tsx` with the complete final version:
 
 ```tsx
 import { useState, useEffect } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-ts";
-import { Wallet } from "@injectivelabs/ts-types";
+import { WalletStrategy } from "@injectivelabs/wallet-strategy";
+import { Wallet } from "@injectivelabs/wallet-base";
 import { MsgBroadcaster } from "@injectivelabs/wallet-core";
 import {
   ChainGrpcWasmApi,
