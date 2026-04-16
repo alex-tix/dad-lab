@@ -558,13 +558,13 @@ All four should pass. Try breaking the authorization check (comment out the `if 
 docker run --rm -v "$(pwd)":/code \
   --mount type=volume,source="$(basename "$(pwd)")_cache",target=/target \
   --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-  cosmwasm/optimizer:0.16.1
+  cosmwasm/optimizer:0.17.0
 
 # For Apple Silicon / ARM64:
 docker run --rm -v "$(pwd)":/code \
   --mount type=volume,source="$(basename "$(pwd)")_cache",target=/target \
   --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-  cosmwasm/optimizer-arm64:0.16.1
+  cosmwasm/optimizer-arm64:0.17.0
 ```
 
 This creates:
@@ -712,18 +712,20 @@ Injective provides a suite of TypeScript packages for building dApps. We'll use 
 | Package | What it does |
 |---------|-------------|
 | `@injectivelabs/sdk-ts` | Core SDK — message types (`MsgExecuteContractCompat`), gRPC client (`ChainGrpcWasmApi`), address utilities |
-| `@injectivelabs/wallet-strategy` | **WalletStrategy** — a unified interface for connecting to different wallets (Keplr, MetaMask, Leap, etc.) |
-| `@injectivelabs/wallet-core` | **MsgBroadcaster** — handles signing and broadcasting transactions through the connected wallet |
+| `@injectivelabs/wallet-core` | **BaseWalletStrategy** and **MsgBroadcaster** — the wallet abstraction layer and transaction broadcaster |
+| `@injectivelabs/wallet-cosmos` | **CosmosWalletStrategy** — concrete wallet implementation for Cosmos wallets (Keplr, Leap, etc.) |
+| `@injectivelabs/wallet-base` | **Wallet** enum — wallet type identifiers |
 | `@injectivelabs/networks` | Network helpers — resolves gRPC/REST/RPC endpoints for testnet or mainnet |
 
 ### The WalletStrategy Pattern
 
-The key abstraction is `WalletStrategy`. Instead of writing wallet-specific code for Keplr, MetaMask, and every other wallet, you create a single `WalletStrategy` instance and call generic methods:
+The Injective SDK uses a **strategy pattern** for wallet integration. Instead of coupling your app to a specific wallet, you:
 
-- `walletStrategy.getAddresses()` — prompts the user to connect and returns their address(es)
-- `walletStrategy.setWallet(Wallet.Keplr)` — switch which wallet to use
+1. Create **concrete strategies** for each wallet you want to support (e.g., `CosmosWalletStrategy` for Keplr).
+2. Pass them into a **`BaseWalletStrategy`** which provides a unified interface.
+3. Call generic methods like `walletStrategy.getAddresses()` and `walletStrategy.setWallet(Wallet.Keplr)`.
 
-The `MsgBroadcaster` takes a `WalletStrategy` and handles the full sign-and-broadcast flow: it simulates the transaction for gas estimation, asks the wallet to sign, then submits the signed transaction to the network.
+The `MsgBroadcaster` takes a `BaseWalletStrategy` and handles the full sign-and-broadcast flow: it simulates the transaction for gas estimation, asks the wallet to sign, then submits the signed transaction to the network.
 
 ### Data Flow
 
@@ -771,7 +773,7 @@ npm install
 ### 10.2 Install Injective SDK Packages
 
 ```bash
-npm install @injectivelabs/sdk-ts @injectivelabs/wallet-strategy @injectivelabs/wallet-core @injectivelabs/wallet-base @injectivelabs/networks
+npm install @injectivelabs/sdk-ts @injectivelabs/wallet-core @injectivelabs/wallet-cosmos @injectivelabs/wallet-base @injectivelabs/networks
 ```
 
 The Injective SDK uses some Node.js APIs internally (like `Buffer`). In a browser, we need polyfills. Install the Vite plugin:
@@ -869,12 +871,19 @@ Update `src/App.tsx`:
 
 ```tsx
 import { useState } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-strategy";
 import { Wallet } from "@injectivelabs/wallet-base";
+import { CosmosWalletStrategy } from "@injectivelabs/wallet-cosmos";
+import { BaseWalletStrategy } from "@injectivelabs/wallet-core";
 import { CHAIN_ID } from "./config";
 
-const walletStrategy = new WalletStrategy({
+const walletStrategy = new BaseWalletStrategy({
   chainId: CHAIN_ID,
+  strategies: {
+    [Wallet.Keplr]: new CosmosWalletStrategy({
+      chainId: CHAIN_ID,
+      wallet: Wallet.Keplr,
+    }),
+  },
 });
 walletStrategy.setWallet(Wallet.Keplr);
 
@@ -889,7 +898,7 @@ function App() {
   };
 
   return (
-    <div style={{ textAlign: "center", fontFamily: "sans-serif", marginTop: "10vh" }}>
+    <div style={{ textAlign: "center", marginTop: "10vh" }}>
       <h1>Counter dApp</h1>
 
       {!address ? (
@@ -897,9 +906,7 @@ function App() {
           Connect Wallet
         </button>
       ) : (
-        <p style={{ color: "#666", fontSize: "0.9rem" }}>
-          Connected: {address}
-        </p>
+        <p>Connected: {address}</p>
       )}
     </div>
   );
@@ -920,8 +927,9 @@ export default App;
 
 Let's walk through the new code:
 
-- **`WalletStrategy`** is created once at module level (outside the component). It manages the connection to the user's wallet.
-- **`walletStrategy.setWallet(Wallet.Keplr)`** tells it to use Keplr. If you wanted to support MetaMask or other wallets, you'd let the user choose and call `setWallet` accordingly.
+- **`CosmosWalletStrategy`** is the concrete strategy for Cosmos-native wallets like Keplr. You create one instance per wallet type you want to support.
+- **`BaseWalletStrategy`** wraps the concrete strategies in a unified interface. The `strategies` map tells it which wallet types are available and how to handle each one.
+- **`walletStrategy.setWallet(Wallet.Keplr)`** tells it which strategy to use. If you added more wallets to the `strategies` map, you could let the user choose and call `setWallet` accordingly.
 - **`walletStrategy.getAddresses()`** triggers the Keplr popup. The user approves the connection, and we get back their `inj1...` address.
 - The UI conditionally renders: if no address, show "Connect Wallet"; otherwise, show the connected address.
 
@@ -939,13 +947,20 @@ Update `src/App.tsx`:
 
 ```tsx
 import { useState, useEffect } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-strategy";
 import { Wallet } from "@injectivelabs/wallet-base";
+import { CosmosWalletStrategy } from "@injectivelabs/wallet-cosmos";
+import { BaseWalletStrategy } from "@injectivelabs/wallet-core";
 import { ChainGrpcWasmApi } from "@injectivelabs/sdk-ts";
 import { CHAIN_ID, ENDPOINTS, CONTRACT_ADDRESS } from "./config";
 
-const walletStrategy = new WalletStrategy({
+const walletStrategy = new BaseWalletStrategy({
   chainId: CHAIN_ID,
+  strategies: {
+    [Wallet.Keplr]: new CosmosWalletStrategy({
+      chainId: CHAIN_ID,
+      wallet: Wallet.Keplr,
+    }),
+  },
 });
 walletStrategy.setWallet(Wallet.Keplr);
 
@@ -983,7 +998,7 @@ function App() {
   };
 
   return (
-    <div style={{ textAlign: "center", fontFamily: "sans-serif", marginTop: "10vh" }}>
+    <div style={{ textAlign: "center", marginTop: "10vh" }}>
       <h1>Counter dApp</h1>
 
       {!address ? (
@@ -991,9 +1006,7 @@ function App() {
           Connect Wallet
         </button>
       ) : (
-        <p style={{ color: "#666", fontSize: "0.9rem" }}>
-          Connected: {address}
-        </p>
+        <p>Connected: {address}</p>
       )}
 
       <p style={{ fontSize: "8rem", fontWeight: "bold", margin: "0.2em 0" }}>
@@ -1036,9 +1049,9 @@ Replace `src/App.tsx` with the complete final version:
 
 ```tsx
 import { useState, useEffect } from "react";
-import { WalletStrategy } from "@injectivelabs/wallet-strategy";
 import { Wallet } from "@injectivelabs/wallet-base";
-import { MsgBroadcaster } from "@injectivelabs/wallet-core";
+import { CosmosWalletStrategy } from "@injectivelabs/wallet-cosmos";
+import { BaseWalletStrategy, MsgBroadcaster } from "@injectivelabs/wallet-core";
 import {
   ChainGrpcWasmApi,
   MsgExecuteContractCompat,
@@ -1047,8 +1060,14 @@ import { CHAIN_ID, NETWORK, ENDPOINTS, CONTRACT_ADDRESS } from "./config";
 
 // --- SDK setup (module-level, created once) ---
 
-const walletStrategy = new WalletStrategy({
+const walletStrategy = new BaseWalletStrategy({
   chainId: CHAIN_ID,
+  strategies: {
+    [Wallet.Keplr]: new CosmosWalletStrategy({
+      chainId: CHAIN_ID,
+      wallet: Wallet.Keplr,
+    }),
+  },
 });
 walletStrategy.setWallet(Wallet.Keplr);
 
@@ -1138,13 +1157,7 @@ function App() {
   };
 
   return (
-    <div
-      style={{
-        textAlign: "center",
-        fontFamily: "sans-serif",
-        marginTop: "10vh",
-      }}
-    >
+    <div style={{ textAlign: "center", marginTop: "10vh" }}>
       <h1>Counter dApp</h1>
 
       {!address ? (
@@ -1152,9 +1165,7 @@ function App() {
           Connect Wallet
         </button>
       ) : (
-        <p style={{ color: "#666", fontSize: "0.9rem" }}>
-          Connected: {address}
-        </p>
+        <p>Connected: {address}</p>
       )}
 
       <p style={{ fontSize: "8rem", fontWeight: "bold", margin: "0.2em 0" }}>
@@ -1165,22 +1176,16 @@ function App() {
         <button
           onClick={handleIncrement}
           disabled={!address || loading}
-          style={{
-            ...buttonStyle,
-            opacity: !address || loading ? 0.5 : 1,
-          }}
+          style={buttonStyle}
         >
-          {loading ? "Broadcasting..." : "Increment"}
+          {loading ? "Sending TX" : "Increment"}
         </button>
         <button
           onClick={handleReset}
           disabled={!address || loading}
-          style={{
-            ...buttonStyle,
-            opacity: !address || loading ? 0.5 : 1,
-          }}
+          style={buttonStyle}
         >
-          Reset (0)
+          {loading ? "Sending TX" : "Reset to 0"}
         </button>
       </div>
     </div>
@@ -1213,7 +1218,7 @@ The new pieces:
 
 - **After broadcasting**, we call `fetchCount()` again to refresh the displayed value.
 
-- **`loading` state** disables both buttons while a transaction is in-flight, preventing double-submits. The button text changes to "Broadcasting..." as a visual indicator.
+- **`loading` state** disables both buttons while a transaction is in-flight, preventing double-submits. The button text changes to "Sending TX" as a visual indicator.
 
 - **Buttons are disabled** when no wallet is connected (`!address`). You can't send transactions without a connected wallet.
 
@@ -1236,7 +1241,7 @@ The new pieces:
 - **Counter smart contract** — `InstantiateMsg`, `ExecuteMsg` (with owner authorization), `QueryMsg`, tested with `cw-multi-test`.
 - **Deployment to Injective Testnet** — Docker optimizer, `injectived tx wasm store`, `injectived tx wasm instantiate`.
 - **React + TypeScript frontend** — Vite scaffolding, project setup.
-- **Wallet connection** — `WalletStrategy` with Keplr.
+- **Wallet connection** — `BaseWalletStrategy` with `CosmosWalletStrategy` for Keplr.
 - **On-chain queries** — `ChainGrpcWasmApi.fetchSmartContractState` with base64 encoding.
 - **Transaction broadcasting** — `MsgBroadcaster` + `MsgExecuteContractCompat`.
 
